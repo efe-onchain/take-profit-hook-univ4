@@ -31,7 +31,11 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
                 beforeSwap: false,
                 afterSwap: true,
                 beforeDonate: false,
-                afterDonate: false
+                afterDonate: false,
+                beforeSwapReturnDelta: false,
+                afterSwapReturnDelta: false,
+                afterAddLiquidityReturnDelta: false,
+                afterRemoveLiquidityReturnDelta: false
             });
     }
 }
