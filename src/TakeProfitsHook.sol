@@ -7,9 +7,11 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
+import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract TakeProfitsHook is BaseHook, ERC1155 {
     using PoolIdLibrary for PoolKey;
-
+    using CurrencyLibrary for Currency;
     /**
      * @dev Mapping to store the last known tickLower value for a pool.
      */
@@ -28,6 +30,17 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
      */
     mapping(PoolId poolId => mapping(int24 tick => mapping(bool zeroForOne => int256 amount)))
         public takeProfitPositions;
+
+    mapping(uint256 tokenId => bool exists) public tokenIdExists;
+    mapping(uint256 tokenId => uint256 claimable) public tokenIdClaimable;
+    mapping(uint256 tokenId => uint256 supply) public tokenIdSupply;
+    mapping(uint256 tokenId => TokenData) public tokenIdData;
+
+    struct TokenData {
+        PoolId poolId;
+        int24 tickLower;
+        bool zeroForOne;
+    }
 
     /**
      * @dev Modifier to ensure the function can only be called by the poolManager.
@@ -51,6 +64,66 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         IPoolManager _poolManager,
         string memory _uri
     ) BaseHook(_poolManager) ERC1155(_uri) {}
+
+    function placeOrder(
+        PoolKey calldata key,
+        int24 tick,
+        uint256 amountIn,
+        bool zeroForOne
+    ) external returns (int24) {
+        int24 tickLower = _getTickLower(tick, key.tickSpacing);
+        takeProfitPositions[key.toId()][tickLower][zeroForOne] += int256(
+            amountIn
+        );
+
+        uint256 tokenId = getTokenId(key, tickLower, zeroForOne);
+
+        if (!tokenIdExists[tokenId]) {
+            tokenIdExists[tokenId] = true;
+            tokenIdData[tokenId] = TokenData({
+                poolId: key.toId(),
+                tickLower: tickLower,
+                zeroForOne: zeroForOne
+            });
+        }
+
+        _mint(msg.sender, tokenId, amountIn, "");
+        tokenIdSupply[tokenId] += amountIn;
+
+        address tokenToBeSoldContract = zeroForOne
+            ? Currency.unwrap(key.currency0)
+            : Currency.unwrap(key.currency1);
+
+        IERC20(tokenToBeSoldContract).transferFrom(
+            msg.sender,
+            address(this),
+            amountIn
+        );
+
+        return tickLower;
+    }
+
+    function cancelOrder(
+        PoolKey calldata key,
+        int24 tick,
+        bool zeroForOne
+    ) external {
+        int24 tickLower = _getTickLower(tick, key.tickSpacing);
+        uint256 tokenId = getTokenId(key, tickLower, zeroForOne);
+
+        //cancel entire order
+        uint256 amountIn = balanceOf(msg.sender, tokenId);
+        require(amountIn > 0, "TPH:No order to cancel");
+
+        takeProfitPositions[key.toId()][tickLower][zeroForOne] -= int256(
+            amountIn
+        );
+        tokenIdSupply[tokenId] -= amountIn;
+        _burn(msg.sender, tokenId, amountIn);
+
+        Currency tokenToBeSold = zeroForOne ? key.currency0 : key.currency1;
+        IERC20(Currency.unwrap(tokenToBeSold)).transfer(msg.sender, amountIn);
+    }
 
     /**
      * @notice Required override function for BaseHook to let the PoolManager know which hooks are implemented.
@@ -78,6 +151,18 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
                 afterAddLiquidityReturnDelta: false,
                 afterRemoveLiquidityReturnDelta: false
             });
+    }
+
+    // ERC-1155 Helpers
+    function getTokenId(
+        PoolKey calldata key,
+        int24 tickLower,
+        bool zeroForOne
+    ) public pure returns (uint256) {
+        return
+            uint256(
+                keccak256(abi.encodePacked(key.toId(), tickLower, zeroForOne))
+            );
     }
 
     // Hooks
