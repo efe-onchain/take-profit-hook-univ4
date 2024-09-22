@@ -11,9 +11,11 @@ import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
+import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 contract TakeProfitsHook is BaseHook, ERC1155 {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
+    using FixedPointMathLib for uint256;
     /**
      * @dev Mapping to store the last known tickLower value for a pool.
      */
@@ -175,6 +177,20 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
             ? uint256(int256(delta.amount1()))
             : uint256(int256(delta.amount0()));
         tokenIdClaimable[tokenId] += tokensReceived;
+    }
+
+    function redeem(
+        uint256 tokenId,
+        uint256 amountIn,
+        address destination
+    ) external {
+        require(tokenIdClaimable[tokenId] > 0, "TPH:No tokens to redeem");
+
+        uint256 balace = balanceOf(msg.sender, tokenId);
+        require(
+            balace >= amountIn,
+            "TPH:Insufficient balance to redeem specified amount"
+        );
     }
 
     /**
