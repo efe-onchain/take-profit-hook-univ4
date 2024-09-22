@@ -67,6 +67,31 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         string memory _uri
     ) BaseHook(_poolManager) ERC1155(_uri) {}
 
+    function afterSwap(
+        address addr,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        BalanceDelta,
+        bytes calldata
+    ) external override poolManagerOnly returns (bytes4) {
+        if (addr = address(this)) {
+            return TakeProfitsHook.afterSwap.selector;
+        }
+
+        bool attemptFulfillment = true;
+        int24 currentTickLower;
+
+        while (attemptFulfillment) {
+            (attemptFulfillment, currentTickLower) = _tryFulfillingOrders(
+                key,
+                params
+            );
+            _setTickLowerLast(key.toId(), currentTickLower);
+        }
+
+        return TakeProfitsHook.afterSwap.selector;
+    }
+
     function placeOrder(
         PoolKey calldata key,
         int24 tick,
@@ -128,8 +153,8 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     }
 
     function fillOrder(
-        PoolKey calldata key, 
-        int24 tick, 
+        PoolKey calldata key,
+        int24 tick,
         bool zeroForOne,
         int256 amountIn
     ) internal {
@@ -137,8 +162,19 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
             zeroForOne: zeroForOne,
             amountSpecified: -amountIn,
             //infinite slippage (not ready for production)
-            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
-        })
+            sqrtPriceLimitX96: zeroForOne
+                ? TickMath.MIN_SQRT_RATIO + 1
+                : TickMath.MAX_SQRT_RATIO - 1
+        });
+
+        BalanceDelta delta = _handleSwap(key, params);
+
+        takeProfitPositions[key.toId()][tick][zeroForOne] -= amountIn;
+        uint256 tokenId = getTokenId(key, tick, zeroForOne);
+        uint256 tokensReceived = zeroForOne
+            ? uint256(int256(delta.amount1()))
+            : uint256(int256(delta.amount0()));
+        tokenIdClaimable[tokenId] += tokensReceived;
     }
 
     /**
@@ -248,5 +284,52 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         }
 
         return delta;
+    }
+
+    function _tryFulfillingOrders(
+        Poolkey calldata key,
+        IPoolManager.SwapParams calldata params
+    ) internal returns (bool, int24) {
+        (, int24 currentTick, , ) = poolManager.getSlot0(key.toId());
+        int24 currentTickLower = _getTickLower(currentTick, key.tickSpacing);
+        int24 lastTickLower = tickLowerLasts[key.toId()];
+
+        bool swapZeroForOne = !params.zeroForOne;
+        int256 swapAmountIn;
+
+        if (lastTickLower < currentTickLower) {
+            for (int24 tick = lastTickLower; tick < currentTickLower; ) {
+                swapAmountIn = takeProfitPositions[key.toId()][tick][
+                    swapZeroForOne
+                ];
+                if (swapAmountIn > 0) {
+                    fillOrder(key, tick, swapZeroForOne, swapAmountIn);
+                    (, currentTick, , ) = poolManager.getSlot0(key.toId());
+                    currentTickLower = _getTickLower(
+                        currentTick,
+                        key.tickSpacing
+                    );
+                    return (true, currentTickLower);
+                }
+                tick += key.tickSpacing;
+            }
+        } else {
+            for (int24 tick = lastTickLower; tick > currentTickLower; ) {
+                swapAmountIn = takeProfitPositions[key.toId()][tick][
+                    swapZeroForOne
+                ];
+                if (swapAmountIn > 0) {
+                    fillOrder(key, tick, swapZeroForOne, swapAmountIn);
+                    (, currentTick, , ) = poolManager.getSlot0(key.toId());
+                    currentTickLower = _getTickLower(
+                        currentTick,
+                        key.tickSpacing
+                    );
+                }
+                tick -= key.tickSpacing;
+            }
+        }
+
+        return (false, currentTickLower);
     }
 }
