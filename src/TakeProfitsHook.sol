@@ -191,6 +191,25 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
             balace >= amountIn,
             "TPH:Insufficient balance to redeem specified amount"
         );
+
+        TokenData memory tokenData = tokenIdData[tokenId];
+        Currency tokensToSend = data.zeroForOne
+            ? tokenData.poolId.currency1
+            : tokenData.poolId.currency0;
+
+        uint256 amountToSend = amountIn.FixedPointMathLib.mulDivDown(
+            tokenIdClaimable[tokenId],
+            tokenIdSupply[tokenId]
+        );
+
+        tokenIdClaimable[tokenId] -= amountToSend;
+        tokenIdSupply[tokenId] -= amountIn;
+        _burn(msg.sender, tokenId, amountIn);
+
+        IERC20(Currency.unwrap(tokensToSend)).transfer(
+            destination,
+            amountToSend
+        );
     }
 
     /**
