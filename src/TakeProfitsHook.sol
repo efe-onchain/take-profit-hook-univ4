@@ -9,6 +9,8 @@ import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 contract TakeProfitsHook is BaseHook, ERC1155 {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
@@ -189,5 +191,48 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         int24 intervals = actualTick / tickSpacing;
         if (actualTick < 0 && actualTick % tickSpacing != 0) intervals--; // round towards negative infinity
         return intervals * tickSpacing;
+    }
+
+    function _handleSwap(
+        PoolKey calldata key,
+        IPoolManager.SwapParams memory params
+    ) internal returns (BalanceDelta) {
+        //get quote of what we owe and are owed
+        BalanceDelta delta = poolManager.swap(key, params, "");
+
+        // we swap token0 for token1
+        if (params.zeroForOne) {
+            //we owe uniswap token0
+            if (delta.amount0() < 0) {
+                IERC20(Currency.unwrap(key.currency0)).transfer(
+                    address(poolManager),
+                    //delta is negative so we need to make it positive
+                    uint128(-delta.amount0())
+                );
+                poolManager.settle();
+            }
+
+            //we are owed token1
+            if (delta.amount1() > 0) {
+                poolManager.take(key.currency1, address(this), delta.amount1());
+            }
+        } else {
+            //we owe uniswap token1
+            if (delta.amount1() < 0) {
+                IERC20(Currency.unwrap(key.currency1)).transfer(
+                    address(poolManager),
+                    //delta is negative so we need to make it positive
+                    uint128(-delta.amount1())
+                );
+                poolManager.settle();
+            }
+
+            //we are owed token0
+            if (delta.amount0() > 0) {
+                poolManager.take(key.currency0, address(this), delta.amount0());
+            }
+        }
+
+        return delta;
     }
 }
