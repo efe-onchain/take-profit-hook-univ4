@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.0;
 
-import {TakeProfitsHook} from "./TakeProfitsHook.sol";
-
-import {BaseHook} from "periphery-next/BaseHook.sol";
-import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
+import {BaseHook} from "v4-periphery/BaseHook.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
+import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
+import {TakeProfitsHook} from "./TakeProfitsHook.sol";
 
 contract TakeProfitsStub is TakeProfitsHook {
     constructor(
