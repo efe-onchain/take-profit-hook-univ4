@@ -127,6 +127,20 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         IERC20(Currency.unwrap(tokenToBeSold)).transfer(msg.sender, amountIn);
     }
 
+    function fillOrder(
+        PoolKey calldata key, 
+        int24 tick, 
+        bool zeroForOne,
+        int256 amountIn
+    ) internal {
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: -amountIn,
+            //infinite slippage (not ready for production)
+            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        })
+    }
+
     /**
      * @notice Required override function for BaseHook to let the PoolManager know which hooks are implemented.
      */
