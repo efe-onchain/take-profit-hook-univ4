@@ -15,7 +15,7 @@ import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 
-contract TakeProfitsHook is ITakeProfitsHook, BaseHook, ERC1155 {
+contract TakeProfitsHook is BaseHook, ERC1155 {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using FixedPointMathLib for uint256;
@@ -47,8 +47,6 @@ contract TakeProfitsHook is ITakeProfitsHook, BaseHook, ERC1155 {
 
     /**
      * @dev Mapping to store the claimable amount for each token ID.
-     * @param tokenId The unique identifier for a token.
-     * @param claimable The amount that can be claimed for the given token ID.
      */
     mapping(uint256 tokenId => uint256 claimable) public tokenIdClaimable;
 
@@ -95,9 +93,7 @@ contract TakeProfitsHook is ITakeProfitsHook, BaseHook, ERC1155 {
 
     /**
      * @notice Executes actions after the pool has been initialized.
-     * @param address Unused parameter.
      * @param key The PoolKey struct containing the pool's parameters.
-     * @param uint160 Unused parameter.
      * @param tick The initial tick value of the pool.
      * @return bytes4 The selector for the afterInitialize function.
      */
@@ -116,8 +112,6 @@ contract TakeProfitsHook is ITakeProfitsHook, BaseHook, ERC1155 {
      * @param addr The address initiating the swap.
      * @param key The PoolKey struct containing the pool's parameters.
      * @param params The SwapParams struct containing the swap parameters.
-     * @param BalanceDelta The balance delta resulting from the swap.
-     * @return bytes4 The selector for the afterSwap function.
      */
     function afterSwap(
         address addr,
@@ -252,9 +246,6 @@ contract TakeProfitsHook is ITakeProfitsHook, BaseHook, ERC1155 {
      * @param tokenId The ID of the token to redeem.
      * @param amountIn The amount of tokens to redeem.
      * @param destination The address to which the redeemed tokens will be transferred.
-     * @require The tokenId must have claimable tokens.
-     * @require The caller must have a sufficient balance of the specified tokenId to redeem the specified amount.
-     * @require The transfer of tokens to the destination address must succeed.
      */
     function redeem(
         uint256 tokenId,
@@ -455,7 +446,7 @@ contract TakeProfitsHook is ITakeProfitsHook, BaseHook, ERC1155 {
                     swapZeroForOne
                 ];
                 if (swapAmountIn > 0) {
-                    fillOrder(key, tick, swapZeroForOne, swapAmountIn);
+                    _fillOrder(key, tick, swapZeroForOne, swapAmountIn);
                     (, currentTick, , , , ) = poolManager.getSlot0(key.toId());
                     currentTickLower = _getTickLower(
                         currentTick,
@@ -471,7 +462,7 @@ contract TakeProfitsHook is ITakeProfitsHook, BaseHook, ERC1155 {
                     swapZeroForOne
                 ];
                 if (swapAmountIn > 0) {
-                    fillOrder(key, tick, swapZeroForOne, swapAmountIn);
+                    _fillOrder(key, tick, swapZeroForOne, swapAmountIn);
                     (, currentTick, , , , ) = poolManager.getSlot0(key.toId());
                     currentTickLower = _getTickLower(
                         currentTick,
